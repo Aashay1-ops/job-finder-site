@@ -141,7 +141,23 @@ td.zero { color: var(--muted); opacity: .5 }
 .track .trow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
 .track select, .board select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface) }
 .track textarea { width: 100%; min-height: 56px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); resize: vertical; font: inherit; font-size: 13px }
-.board { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 6px }
+.apps { display: grid; gap: 14px }
+.apps-top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between }
+.apps-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; flex: 1 1 520px }
+.apps-stats div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px }
+.apps-stats b { display: block; font-family: var(--mono); font-size: 20px; font-weight: 500 }
+.apps-stats span { font-size: 12px; color: var(--muted) }
+.sync { font-size: 12.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.sync .ok { color: var(--good) } .sync .warn { color: var(--warn) }
+.log { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; max-height: 340px; overflow: auto }
+.log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px }
+.log li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px }
+.log time { color: var(--muted); font-family: var(--mono); font-size: 12px }
+.chip.follow { background: var(--warn-soft); color: var(--warn); font-weight: 600 }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); z-index: 20; background: var(--surface); border: 1px solid var(--accent); box-shadow: 0 8px 28px rgba(0,0,0,.18); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; width: min(520px, calc(100vw - 32px)) }
+.toast .actions { justify-content: flex-start }
+.history { font-size: 12.5px; color: var(--muted); margin: 0; padding-left: 16px }
+.board { display: grid; grid-template-columns: repeat(6, minmax(200px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 6px }
 .bcol { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; align-content: start; min-width: 0 }
 .bcol h3 { display: flex; justify-content: space-between }
 .bcard { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; display: grid; gap: 5px; font-size: 13px; min-width: 0 }
@@ -232,13 +248,13 @@ td.zero { color: var(--muted); opacity: .5 }
         <strong>Connect the Refresh button (one time)</strong>
         <ol>
           <li><a id="token-link" target="_blank" rel="noopener">Create a fine-grained GitHub token ↗</a></li>
-          <li>Repository access: <b>Only select repositories</b> → <span class="num" id="token-repo">job-finder-site</span></li>
-          <li>Repository permissions: <b>Actions → Read and write</b> (nothing else)</li>
+          <li>Repository access: <b>Only select repositories</b> → <span class="num" id="token-repo">job-finder-site</span> and <span class="num">job-finder</span></li>
+          <li>Repository permissions: <b>Actions → Read and write</b> and <b>Contents → Read and write</b> (nothing else)</li>
           <li>Generate, copy it, and paste it here:</li>
         </ol>
         <input type="password" id="token-input" placeholder="github_pat_…" autocomplete="off" aria-label="GitHub token">
         <div class="actions"><button class="btn primary" type="submit">Save and refresh</button><button class="btn" type="button" id="token-cancel">Cancel</button><button class="btn" type="button" id="token-forget" hidden>Remove saved token</button></div>
-        <p class="note">Saved only in this browser. It can do nothing except start this site's refresh.</p>
+        <p class="note">Saved only in this browser. It can start this site's refresh and keep your applications record in your private repo, nothing else.</p>
       </form>
     </div>
   </header>
@@ -289,7 +305,16 @@ td.zero { color: var(--muted); opacity: .5 }
     <span class="newinfo" id="new-info"></span>
   </div>
 
-  <section class="board" id="board" hidden aria-label="My applications"></section>
+  <section class="apps" id="apps" hidden aria-label="My applications">
+    <div class="apps-top">
+      <div class="apps-stats" id="apps-stats"></div>
+      <div class="sync" id="sync-status"></div>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="log"><h3>Activity log</h3><ol id="apps-log"></ol></div>
+    <details class="log" id="apps-archive-wrap"><summary><h3 style="display:inline">Archived</h3> <span class="num" id="n-archived"></span></summary><div id="apps-archive" style="margin-top:8px;display:grid;gap:8px"></div></details>
+  </section>
+  <div class="toast" id="ask" hidden role="dialog" aria-live="polite"></div>
 
   <div class="panes">
     <div>
@@ -363,7 +388,10 @@ fetch("meta.json", { cache: "no-store" }).then(r => r.ok ? r.json() : {}).catch(
   KEYIDX = new Map(JOBS.map(j => [j.key, j]));
   initNew();
   JOBS.forEach(j => j.rank = recommend(j));
+  markClosed();
   updateTrackCount();
+  pullRecord();
+  setTimeout(maybeAsk, 1500);
   stamp(); setInterval(stamp, 60e3); setInterval(checkNewer, 10 * 60e3);
   $("#h-src").textContent = META.sources;
   META.levels.forEach((l, i) => $("#f-level").insertAdjacentHTML("beforeend", `<option value="${i}">${esc(l)}</option>`));
@@ -437,7 +465,9 @@ $("#token-box").addEventListener("submit", e => {
   e.preventDefault();
   const t = $("#token-input").value.trim();
   if (!t) return;
-  setToken(t); $("#token-input").value = ""; $("#token-settings").hidden = false; showTokenBox(false); startRefresh();
+  setToken(t); $("#token-input").value = ""; $("#token-settings").hidden = false; showTokenBox(false);
+  pullRecord();
+  if (!$("#apps").hidden) $("#refresh-note").textContent = "Token saved. Your applications record will sync to job-finder."; else startRefresh();
 });
 $("#refresh-now").onclick = () => getToken() ? startRefresh() : showTokenBox(true);
 
@@ -636,14 +666,14 @@ function rowHTML(j) {
   const stripe = $("#f-color").value === "rep" ? gradeRep(j) : gradeAge(j);
   const age = `<span class="chip grade"><i class="dot" style="background:${gradeAge(j)}"></i>${esc(ageText(j.age))}</span>`;
   const rp = j.reposts ? `<span class="chip grade"><i class="dot" style="background:${gradeRep(j)}"></i>Reposted ${j.reposts}×</span>` : "";
-  const t = TRACK[j.key];
+  const t = TRACK[j.key]?.archived ? null : TRACK[j.key];
   return `<div class="row" role="listitem" tabindex="0" data-id="${esc(j.id)}" aria-current="${current?.id === j.id}">
     <span class="stripe" style="background:${stripe}" aria-hidden="true"></span>
     <div class="fit ${fitClass(j.fit)}">${j.fit}<small>${fitWord(j.fit)}</small></div>
     <div><div class="rhead"><div class="t">${j.isNew ? `<span class="chip new">NEW</span> ` : ""}${esc(j.title)}</div>
       <button class="star" data-star="${esc(j.id)}" aria-pressed="${!!t}" aria-label="${t ? "Saved: " + esc(t.stage) : "Save this job"}" title="${t ? esc(t.stage) + " (click to open)" : "Save"}">${t ? "★" : "☆"}</button></div>
       <div class="m">${esc(j.company)} · ${esc(j.location || where)}</div>
-      <div class="chips">${t ? `<span class="chip stage">${esc(t.stage)}</span>` : ""}${age}${rp}<span class="chip type">${esc(META.types[j.type])}</span><span class="chip type">${esc(META.modes[j.mode])}</span><span class="chip">${esc(where)}</span><span class="chip res">Use: ${esc(SHORT_RES[META.resumes[j.best].key])}</span>${f.join("")}</div>
+      <div class="chips">${t && !t.archived ? `<span class="chip stage">${esc(t.stage)}</span>${needsFollowUp(t) ? `<span class="chip follow">Follow up</span>` : ""}` : ""}${age}${rp}<span class="chip type">${esc(META.types[j.type])}</span><span class="chip type">${esc(META.modes[j.mode])}</span><span class="chip">${esc(where)}</span><span class="chip res">Use: ${esc(SHORT_RES[META.resumes[j.best].key])}</span>${f.join("")}</div>
     </div></div>`;
 }
 function more() {
@@ -656,7 +686,7 @@ $("#list").addEventListener("click", e => {
   if (e.target.closest("#more")) return more();
   const star = e.target.closest(".star");
   if (star) {
-    const j = JOBS[+star.dataset.star], t = TRACK[j.key];
+    const j = JOBS[+star.dataset.star], t = TRACK[j.key]?.archived ? null : TRACK[j.key];
     if (!t) setStage(j, "Saved");
     else if (t.stage === "Saved") setStage(j, "");
     else openJob(j);                                   // further along: open it rather than un-save by accident
@@ -673,94 +703,264 @@ $("#list").addEventListener("keydown", e => {
   if (row && e.target === row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click() }
 });
 
-/* ---------- saved jobs + application tracking (stored in this browser) ---------- */
-const STAGES = ["Saved", "Applied", "Interview", "Offer", "Rejected"];
-const TRACK_KEY = "jr-tracker";
+/* ---------- applications record ----------
+   Every saved / opened / applied job is kept with its full history. It lives in this browser and, when a
+   token is connected, in data/applications.json of the private job-finder repo (each save = a dated commit).
+   Nothing is ever deleted: "Remove" archives. */
+const STAGES = ["Saved", "Opened", "Applied", "Interview", "Offer", "Rejected"];
+const AFTER_APPLY = ["Applied", "Interview", "Offer", "Rejected"];
+const RECORD = { owner: "Aashay1-ops", repo: "job-finder", path: "data/applications.json" };
+const TRACK_KEY = "jr-tracker", ASK_KEY = "jr-ask", FOLLOW_DAYS = 10;
 let TRACK = store.get(TRACK_KEY, {}), KEYIDX = new Map();
-const todayISO = () => new Date().toISOString().slice(0, 10);
-function saveTrack() { store.set(TRACK_KEY, TRACK); updateTrackCount() }
-function updateTrackCount() { const n = Object.keys(TRACK).length; $("#n-tracked").textContent = n ? `(${n})` : "" }
-async function setStage(j, stage) {
-  if (!stage) delete TRACK[j.key];
+const nowISO = () => new Date().toISOString();
+const todayISO = () => nowISO().slice(0, 10);
+// older records (before history existed) get one
+for (const t of Object.values(TRACK)) t.history ||= [{ at: t.updatedAt || nowISO(), event: t.stage || "Saved" }];
+
+function logEvent(t, event, extra) { t.history.push({ at: nowISO(), event, ...(extra || {}) }); t.updatedAt = nowISO() }
+function saveTrack() { store.set(TRACK_KEY, TRACK); updateTrackCount(); scheduleSync() }
+function updateTrackCount() { const n = Object.values(TRACK).filter(t => !t.archived).length; $("#n-tracked").textContent = n ? `(${n})` : "" }
+function recordFor(j) {
+  return TRACK[j.key] ||= { title: j.title, company: j.company, location: j.location || j.states.join(", "), savedAt: todayISO(), notes: "", history: [] };
+}
+function fillUrl(j) {
+  const t = TRACK[j.key];
+  if (t && !t.url) details(j).then(([url]) => { if (url && TRACK[j.key]) { TRACK[j.key].url = url; saveTrack() } }).catch(() => {});
+}
+function setStage(j, stage) {
+  if (!stage) { const t = TRACK[j.key]; if (t) { t.archived = true; logEvent(t, "Archived") } }
   else {
-    const t = TRACK[j.key] || { title: j.title, company: j.company, location: j.location || j.states.join(", "), savedAt: todayISO(), notes: "" };
-    t.stage = stage; t.updatedAt = new Date().toISOString();
+    const t = recordFor(j), from = t.stage;
+    if (t.archived) { t.archived = false; logEvent(t, "Restored") }
+    if (from !== stage) { t.stage = stage; logEvent(t, stage, from ? { from } : null) }
     if (stage === "Applied" && !t.appliedAt) t.appliedAt = todayISO();
-    TRACK[j.key] = t;
-    if (!t.url) details(j).then(([url]) => { if (url && TRACK[j.key]) { TRACK[j.key].url = url; saveTrack() } }).catch(() => {});
+    if (stage === "Opened" && !t.openedAt) t.openedAt = todayISO();
+    fillUrl(j);
   }
-  saveTrack(); rerow(j);
-  if (current === j) renderTrackBox(j);
-  if (!$("#board").hidden) renderBoard();
+  saveTrack(); afterChange(j);
 }
-function rerow(j) {
-  const el = document.querySelector(`#list .row[data-id="${j.id}"]`);
-  if (el) el.outerHTML = rowHTML(j);
+function afterChange(j) { if (j) rerow(j); if (current && (!j || current === j)) renderTrackBox(current); if (!$("#apps").hidden) renderApps() }
+function rerow(j) { const el = document.querySelector(`#list .row[data-id="${j.id}"]`); if (el) el.outerHTML = rowHTML(j) }
+function needsFollowUp(t) {
+  return !t.archived && (t.stage === "Applied" || t.stage === "Interview") && (Date.now() - new Date(t.updatedAt)) / 864e5 >= FOLLOW_DAYS;
 }
+
+/* opening a posting = the closest thing to "applied" a web page can see; ask when you come back */
+function recordOpen(j) {
+  const t = TRACK[j.key];
+  if (!t || t.stage === "Saved" || t.archived) setStage(j, "Opened");
+  else { t.openedAt ||= todayISO(); logEvent(t, "Opened posting"); saveTrack() }
+  if (!t || !AFTER_APPLY.includes(TRACK[j.key].stage)) {
+    const q = store.get(ASK_KEY, []).filter(x => x.key !== j.key);
+    q.push({ key: j.key, at: Date.now() }); store.set(ASK_KEY, q);
+  }
+}
+function maybeAsk() {
+  if (!$("#ask").hidden || document.visibilityState !== "visible") return;
+  const q = store.get(ASK_KEY, []).filter(x => TRACK[x.key] && !AFTER_APPLY.includes(TRACK[x.key].stage));
+  store.set(ASK_KEY, q);
+  const next = q.find(x => Date.now() - x.at > 15e3);  // give it a moment: you have to have actually left to apply
+  if (!next) return;
+  const t = TRACK[next.key];
+  $("#ask").innerHTML = `<div>Did you apply to <strong>${esc(t.title)}</strong> at <strong>${esc(t.company)}</strong>?</div>
+    <div class="actions"><button class="btn primary" data-a="yes">Yes, I applied</button><button class="btn" data-a="no">Not yet</button><button class="btn" data-a="later">Ask me later</button></div>`;
+  $("#ask").dataset.key = next.key; $("#ask").hidden = false;
+}
+$("#ask").addEventListener("click", e => {
+  const a = e.target.dataset.a; if (!a) return;
+  const key = $("#ask").dataset.key, j = KEYIDX.get(key), t = TRACK[key];
+  let q = store.get(ASK_KEY, []);
+  if (a === "later") q = q.map(x => x.key === key ? { ...x, at: Date.now() + 30 * 60e3 } : x);  // ask again in ~30 min
+  else q = q.filter(x => x.key !== key);
+  store.set(ASK_KEY, q);
+  if (a === "yes" && t) {
+    if (j) setStage(j, "Applied");
+    else { t.stage = "Applied"; t.appliedAt ||= todayISO(); logEvent(t, "Applied"); saveTrack(); afterChange(null) }
+  }
+  $("#ask").hidden = true; setTimeout(maybeAsk, 400);
+});
+document.addEventListener("visibilitychange", () => setTimeout(maybeAsk, 600));
+window.addEventListener("focus", () => setTimeout(maybeAsk, 600));
+// links to postings anywhere on the page count as "opened"
+document.addEventListener("click", e => {
+  const a = e.target.closest("#open-link, [data-open-key]"); if (!a || !a.href) return;
+  const j = a.id === "open-link" ? current : KEYIDX.get(a.dataset.openKey);
+  if (j) recordOpen(j);
+}, true);
+
+/* postings that left the dashboard are marked once, and kept */
+function markClosed() {
+  let changed = false;
+  for (const [key, t] of Object.entries(TRACK)) {
+    if (!KEYIDX.has(key) && !t.closedAt) { t.closedAt = todayISO(); t.history.push({ at: nowISO(), event: "No longer listed" }); changed = true }
+    else if (KEYIDX.has(key) && t.closedAt) { delete t.closedAt; t.history.push({ at: nowISO(), event: "Listed again" }); changed = true }
+  }
+  if (changed) saveTrack();
+}
+
 function renderTrackBox(j) {
   const box = $("#track-box"); if (!box) return;
-  const t = TRACK[j.key];
+  const t = TRACK[j.key]?.archived ? null : TRACK[j.key];
   box.innerHTML = `
     <div class="trow"><h3 style="margin:0">Track this job</h3>
       <select id="trk-stage" aria-label="Application status"><option value="">Not tracked</option>${STAGES.map(s => `<option ${t?.stage === s ? "selected" : ""}>${s}</option>`).join("")}</select>
-      <span class="note">${t ? `Saved ${esc(t.savedAt)}${t.appliedAt ? ` · applied ${esc(t.appliedAt)}` : ""}` : "Saved jobs appear under My applications."}</span></div>
-    <textarea id="trk-notes" placeholder="Notes: recruiter you messaged, referral, interview dates…">${esc(t?.notes || "")}</textarea>`;
+      ${t && needsFollowUp(t) ? `<span class="chip follow">Follow up</span>` : ""}
+      <span class="note">${t ? `Saved ${esc(t.savedAt)}${t.appliedAt ? ` · applied ${esc(t.appliedAt)}` : ""}` : "Opening the posting tracks it automatically."}</span></div>
+    <textarea id="trk-notes" placeholder="Notes: recruiter you messaged, referral, interview dates…">${esc(t?.notes || "")}</textarea>
+    ${t?.history?.length ? `<ul class="history">${t.history.slice(-6).reverse().map(h => `<li>${esc(h.at.slice(0, 10))}: ${esc(h.event)}${h.from ? ` (from ${esc(h.from)})` : ""}</li>`).join("")}</ul>` : ""}`;
   $("#trk-stage").onchange = e => setStage(j, e.target.value);
   let tm;
   $("#trk-notes").oninput = e => {
     clearTimeout(tm);
     tm = setTimeout(() => {
-      if (!TRACK[j.key]) { if (!e.target.value.trim()) return; setStage(j, "Saved") }
-      TRACK[j.key].notes = e.target.value; TRACK[j.key].updatedAt = new Date().toISOString(); saveTrack();
-    }, 400);
+      if (!TRACK[j.key] || TRACK[j.key].archived) { if (!e.target.value.trim()) return; setStage(j, "Saved") }
+      const rec = TRACK[j.key]; rec.notes = e.target.value; rec.updatedAt = nowISO(); saveTrack();
+    }, 600);
   };
 }
 
-/* ---------- My applications board ---------- */
-function showView(board) {
-  $("#v-all").setAttribute("aria-selected", !board); $("#v-board").setAttribute("aria-selected", board);
-  $("#board").hidden = !board;
-  document.querySelectorAll(".panes, .bystate, .filters, .counts, .fresh").forEach(el => el.hidden = board);
-  if (board) renderBoard();
+/* ---------- My applications section ---------- */
+function showView(apps) {
+  $("#v-all").setAttribute("aria-selected", !apps); $("#v-board").setAttribute("aria-selected", apps);
+  $("#apps").hidden = !apps;
+  document.querySelectorAll(".panes, .bystate, .filters, .counts, .fresh").forEach(el => el.hidden = apps);
+  if (apps) renderApps();
 }
 $("#v-all").onclick = () => showView(false);
 $("#v-board").onclick = () => showView(true);
 function sinceText(iso) { const d = Math.round((Date.now() - new Date(iso)) / 864e5); return d <= 0 ? "today" : d === 1 ? "1 day ago" : d + " days ago" }
-function renderBoard() {
-  const items = Object.entries(TRACK).sort((a, b) => (b[1].updatedAt || "").localeCompare(a[1].updatedAt || ""));
-  $("#board").innerHTML = STAGES.map(stage => {
-    const cards = items.filter(([, t]) => t.stage === stage);
-    return `<div class="bcol"><h3><span>${stage}</span><span class="num">${cards.length}</span></h3>
-      ${cards.length ? cards.map(([key, t]) => {
-        const live = KEYIDX.get(key);
-        return `<div class="bcard" data-key="${esc(key)}">
-          <div class="t">${esc(t.title)}</div>
-          <div class="m">${esc(t.company)}${t.location ? " · " + esc(t.location) : ""}</div>
-          <div class="m">${t.appliedAt ? "Applied " + esc(t.appliedAt) : "Saved " + esc(t.savedAt)} · updated ${sinceText(t.updatedAt)}${live ? "" : " · <b>no longer listed</b>"}</div>
-          ${t.notes ? `<div class="n">${esc(t.notes.slice(0, 140))}${t.notes.length > 140 ? "…" : ""}</div>` : ""}
-          <div class="acts">
-            <select data-move aria-label="Move to">${STAGES.map(s => `<option ${s === stage ? "selected" : ""}>${s}</option>`).join("")}</select>
-            ${live ? `<button class="linkbtn" data-show>Details</button>` : ""}
-            ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">Posting ↗</a>` : ""}
-            <button class="linkbtn" data-remove>Remove</button>
-          </div></div>`;
-      }).join("") : `<div class="bempty">${stage === "Saved" ? "Click ☆ on any job to save it here." : "Nothing here yet."}</div>`}
-    </div>`;
-  }).join("");
+function cardHTML(key, t, stage) {
+  const live = KEYIDX.get(key);
+  return `<div class="bcard" data-key="${esc(key)}">
+    <div class="t">${esc(t.title)}</div>
+    <div class="m">${esc(t.company)}${t.location ? " · " + esc(t.location) : ""}</div>
+    <div class="m">${t.appliedAt ? "Applied " + esc(t.appliedAt) : t.openedAt ? "Opened " + esc(t.openedAt) : "Saved " + esc(t.savedAt)} · updated ${sinceText(t.updatedAt)}${t.closedAt ? " · <b>no longer listed</b>" : ""}</div>
+    ${needsFollowUp(t) ? `<div><span class="chip follow">Follow up: ${Math.floor((Date.now() - new Date(t.updatedAt)) / 864e5)} days quiet</span></div>` : ""}
+    ${t.notes ? `<div class="n">${esc(t.notes.slice(0, 140))}${t.notes.length > 140 ? "…" : ""}</div>` : ""}
+    <div class="acts">
+      ${stage ? `<select data-move aria-label="Move to">${STAGES.map(s => `<option ${s === stage ? "selected" : ""}>${s}</option>`).join("")}</select>` : `<button class="linkbtn" data-restore>Restore</button>`}
+      ${live ? `<button class="linkbtn" data-show>Details</button>` : ""}
+      ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener" data-open-key="${esc(key)}">Posting ↗</a>` : ""}
+      ${stage ? `<button class="linkbtn" data-remove>Archive</button>` : ""}
+    </div></div>`;
 }
-$("#board").addEventListener("change", e => {
+function renderApps() {
+  const all = Object.entries(TRACK), active = all.filter(([, t]) => !t.archived), arch = all.filter(([, t]) => t.archived);
+  active.sort((a, b) => (b[1].updatedAt || "").localeCompare(a[1].updatedAt || ""));
+  const weekAgo = Date.now() - 7 * 864e5;
+  const n = s => active.filter(([, t]) => t.stage === s).length;
+  const stats = [["Saved", n("Saved")], ["Opened", n("Opened")], ["Applied", active.filter(([, t]) => AFTER_APPLY.includes(t.stage)).length],
+    ["Interviews", n("Interview")], ["Offers", n("Offer")], ["Applied this week", active.filter(([, t]) => t.appliedAt && new Date(t.appliedAt) >= weekAgo).length],
+    ["Need follow-up", active.filter(([, t]) => needsFollowUp(t)).length]];
+  $("#apps-stats").innerHTML = stats.map(([l, v]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#board").innerHTML = STAGES.map(stage => {
+    const cards = active.filter(([, t]) => t.stage === stage);
+    return `<div class="bcol"><h3><span>${stage}</span><span class="num">${cards.length}</span></h3>
+      ${cards.length ? cards.map(([k, t]) => cardHTML(k, t, stage)).join("") : `<div class="bempty">${{ Saved: "Click ☆ on any job to save it.", Opened: "Jobs you open the posting for land here automatically." }[stage] || "Nothing here yet."}</div>`}</div>`;
+  }).join("");
+  const events = all.flatMap(([, t]) => (t.history || []).map(h => ({ ...h, t }))).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 200);
+  $("#apps-log").innerHTML = events.length ? events.map(e => `<li><time>${esc(new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}</time><span><b>${esc(e.event)}</b>${e.from ? ` (from ${esc(e.from)})` : ""}: ${esc(e.t.title)} at ${esc(e.t.company)}</span></li>`).join("")
+    : `<li><span class="note">Nothing yet. Save a job with ☆ or open a posting, and it's recorded here.</span></li>`;
+  $("#n-archived").textContent = arch.length ? `(${arch.length})` : "";
+  $("#apps-archive").innerHTML = arch.length ? arch.map(([k, t]) => cardHTML(k, t, null)).join("") : `<div class="bempty">Archived jobs are kept here, never deleted.</div>`;
+  renderSync();
+}
+$("#apps").addEventListener("change", e => {
   if (!e.target.matches("[data-move]")) return;
-  const key = e.target.closest(".bcard").dataset.key, t = TRACK[key];
-  t.stage = e.target.value; t.updatedAt = new Date().toISOString();
-  if (t.stage === "Applied" && !t.appliedAt) t.appliedAt = todayISO();
-  saveTrack(); renderBoard(); const j = KEYIDX.get(key); if (j) rerow(j);
+  const key = e.target.closest(".bcard").dataset.key, j = KEYIDX.get(key), t = TRACK[key], to = e.target.value;
+  if (j) return setStage(j, to);
+  const from = t.stage; t.stage = to; if (to === "Applied") t.appliedAt ||= todayISO(); logEvent(t, to, { from }); saveTrack(); renderApps();
 });
-$("#board").addEventListener("click", e => {
+$("#apps").addEventListener("click", e => {
   const card = e.target.closest(".bcard"); if (!card) return;
-  const key = card.dataset.key, j = KEYIDX.get(key);
-  if (e.target.matches("[data-remove]")) { delete TRACK[key]; saveTrack(); renderBoard(); if (j) rerow(j) }
+  const key = card.dataset.key, j = KEYIDX.get(key), t = TRACK[key];
+  if (e.target.matches("[data-remove]")) { t.archived = true; logEvent(t, "Archived"); saveTrack(); renderApps(); if (j) rerow(j) }
+  else if (e.target.matches("[data-restore]")) { t.archived = false; logEvent(t, "Restored"); saveTrack(); renderApps(); if (j) rerow(j) }
   else if (e.target.matches("[data-show]") && j) { showView(false); openJob(j) }
 });
+
+/* ---------- export ---------- */
+function exportCSV() {
+  const cols = ["Stage", "Title", "Company", "Location", "Saved", "Opened", "Applied", "Last update", "Archived", "No longer listed", "Posting", "Notes"];
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = Object.values(TRACK).map(t => [t.stage, t.title, t.company, t.location, t.savedAt, t.openedAt, t.appliedAt, (t.updatedAt || "").slice(0, 10), t.archived ? "yes" : "", t.closedAt || "", t.url, t.notes].map(q).join(","));
+  const blob = new Blob([[cols.map(q).join(","), ...rows].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `job-applications-${todayISO()}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ---------- sync with data/applications.json in the private repo ---------- */
+const SYNC = { state: "local", at: null, sha: null, timer: null, busy: false, msg: "" };
+const b64e = str => btoa(unescape(encodeURIComponent(str)));
+const b64d = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ""))));
+async function recordApi(method, body) {
+  const r = await fetch(`https://api.github.com/repos/${RECORD.owner}/${RECORD.repo}/contents/${RECORD.path}`, {
+    method, cache: "no-store", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + getToken(), "X-GitHub-Api-Version": "2022-11-28" },
+    body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 404 && method === "GET") return null;            // no record yet, or no access to the repo
+  if (r.status === 404) throw { code: "auth" };                      // writing: a private repo the token can't see answers 404
+  if (r.status === 401 || r.status === 403) throw { code: "auth" };
+  if (r.status === 409 || r.status === 422) throw { code: "conflict" };
+  if (!r.ok) throw { code: "http", status: r.status };
+  return r.json();
+}
+function mergeRecords(remote) {
+  // per job keep the more recently updated copy, and union the histories
+  for (const [key, rt] of Object.entries(remote || {})) {
+    const lt = TRACK[key];
+    if (!lt) { TRACK[key] = rt; continue }
+    const keep = (rt.updatedAt || "") > (lt.updatedAt || "") ? { ...rt } : { ...lt };
+    const seen = new Set(), hist = [];
+    for (const h of [...(lt.history || []), ...(rt.history || [])]) { const id = h.at + "|" + h.event; if (!seen.has(id)) { seen.add(id); hist.push(h) } }
+    keep.history = hist.sort((a, b) => a.at.localeCompare(b.at));
+    TRACK[key] = keep;
+  }
+}
+async function pullRecord() {
+  if (!getToken()) { SYNC.state = "local"; renderSync(); return }
+  try {
+    const f = await recordApi("GET");
+    const remote = f ? JSON.parse(b64d(f.content)).jobs || {} : {};
+    if (f) { SYNC.sha = f.sha; mergeRecords(remote); store.set(TRACK_KEY, TRACK) }
+    SYNC.state = "ok"; SYNC.at = Date.now(); updateTrackCount(); afterChange(null);
+    // upload when this browser holds anything the repo doesn't (first sync, or changes made offline)
+    if (JSON.stringify(TRACK) !== JSON.stringify(remote) && Object.keys(TRACK).length) scheduleSync(100);
+  } catch (e) { SYNC.state = e.code === "auth" ? "noaccess" : "error"; renderSync() }
+}
+function scheduleSync(delay = 2500) {
+  if (!getToken()) { renderSync(); return }
+  clearTimeout(SYNC.timer); SYNC.timer = setTimeout(pushRecord, delay); SYNC.state = "pending"; renderSync();
+}
+async function pushRecord(retry = true) {
+  if (SYNC.busy) return scheduleSync();
+  SYNC.busy = true;
+  try {
+    const body = JSON.stringify({ version: 1, updated: nowISO(), jobs: TRACK }, null, 1) + "\n";
+    const r = await recordApi("PUT", { message: `Applications record: ${Object.keys(TRACK).length} jobs`, content: b64e(body), ...(SYNC.sha ? { sha: SYNC.sha } : {}) });
+    SYNC.sha = r.content.sha; SYNC.state = "ok"; SYNC.at = Date.now();
+  } catch (e) {
+    if (e.code === "conflict" && retry) {                           // changed elsewhere (another device): merge, then save again
+      SYNC.busy = false; const f = await recordApi("GET").catch(() => null);
+      if (f) { SYNC.sha = f.sha; mergeRecords(JSON.parse(b64d(f.content)).jobs); store.set(TRACK_KEY, TRACK) }
+      return pushRecord(false);
+    }
+    SYNC.state = e.code === "auth" ? "noaccess" : "error";
+  } finally { SYNC.busy = false; renderSync() }
+}
+function renderSync() {
+  const el = $("#sync-status"); if (!el) return;
+  const when = SYNC.at ? new Date(SYNC.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+  el.innerHTML = {
+    ok: `<span class="ok">✓ Saved to your private job-finder repo${when ? " at " + when : ""}</span>`,
+    pending: `<span>Saving to your private repo…</span>`,
+    noaccess: `<span class="warn">Saved in this browser only: your token can't write to job-finder yet.</span> <button class="linkbtn" id="sync-fix">How to fix</button>`,
+    error: `<span class="warn">Couldn't reach GitHub; saved in this browser and will retry.</span>`,
+    local: `<span class="warn">Saved in this browser only.</span> <button class="linkbtn" id="sync-fix">Keep a permanent record</button>`,
+  }[SYNC.state] + ` <button class="linkbtn" id="export-csv">Export CSV</button>`;
+  const fix = $("#sync-fix"); if (fix) fix.onclick = () => { showTokenBox(true); $("#refresh-note").textContent = "Edit your token on GitHub to add the job-finder repo with Contents: Read and write (or create a new one), then paste it here."; window.scrollTo({ top: 0, behavior: "smooth" }) };
+  $("#export-csv").onclick = exportCSV;
+  if (SYNC.state === "error") { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(pushRecord, 60e3) }
+}
 
 /* ---------- new since your last visit ---------- */
 // What you saw is kept as a compact sorted list of 32-bit fingerprints of each job (about 1 MB here).
