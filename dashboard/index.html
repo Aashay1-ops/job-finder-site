@@ -877,7 +877,7 @@ function cardHTML(key, t, stage) {
     <div class="acts">
       ${stage ? `<select data-move aria-label="Move to">${STAGES.map(s => `<option ${s === stage ? "selected" : ""}>${s}</option>`).join("")}</select>` : `<button class="linkbtn" data-restore>Restore</button>`}
       ${live ? `<button class="linkbtn" data-show>Details</button>` : ""}
-      ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener" data-open-key="${esc(key)}">Posting ↗</a>` : ""}
+      ${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener" data-open-key="${esc(key)}">${postingLabel(t.url, true)}</a>` : ""}
       ${stage ? `<button class="linkbtn" data-remove>Archive</button>` : ""}
     </div></div>`;
 }
@@ -915,6 +915,22 @@ $("#apps").addEventListener("click", e => {
   else if (e.target.matches("[data-restore]")) { t.archived = false; logEvent(t, "Restored"); saveTrack(); renderApps(); if (j) rerow(j) }
   else if (e.target.matches("[data-show]") && j) { showView(false); openJob(j) }
 });
+
+/* ---------- where a posting link leads (keep in sync with AGGREGATORS in src/careers.py) ---------- */
+const JOB_BOARDS = /(^|\.)(adzuna|energyjobline|whatjobs|careers-page|4dayweek|himalayas|linkedin|indeed|glassdoor|ziprecruiter|lensa|jooble|dice|simplify|builtin|wellfound|jobgether|monster|careerbuilder|snagajob|jobright|remoteok|remotive|weworkremotely|freehire|joblist|jobleads|learn4good|recruit\.net|tealhq|seek)\./i;
+const BOARD_NAMES = { adzuna: "Adzuna", energyjobline: "Energy Jobline", whatjobs: "WhatJobs", "careers-page": "careers-page.com", "4dayweek": "4dayweek", himalayas: "Himalayas",
+  linkedin: "LinkedIn", indeed: "Indeed", glassdoor: "Glassdoor", ziprecruiter: "ZipRecruiter", wellfound: "Wellfound", seek: "SEEK", builtin: "Built In", dice: "Dice",
+  simplify: "Simplify", jobgether: "Jobgether", monster: "Monster", lensa: "Lensa", jooble: "Jooble", remoteok: "Remote OK", remotive: "Remotive" };
+function linkTarget(url) {
+  // -> { board: null } for the employer's own hiring site, or { board: "Adzuna" } for a job board
+  let host = ""; try { host = new URL(url).hostname.toLowerCase() } catch { return { board: null } }
+  const m = host.match(JOB_BOARDS);
+  return { board: m ? (BOARD_NAMES[m[2].toLowerCase()] || host.replace(/^www\./, "")) : null };
+}
+function postingLabel(url, short) {
+  const { board } = linkTarget(url);
+  return board ? (short ? `On ${board} ↗` : `View on job board (${board}) ↗`) : (short ? "Company site ↗" : "Apply on company site ↗");
+}
 
 /* ---------- company careers pages (companies.json, loaded on first use) ---------- */
 let CAREERS = null;
@@ -1155,6 +1171,7 @@ function openJob(j) {
       <h2>${esc(j.title)}</h2>
       <div class="m">${esc(j.company)} · ${esc(j.location || where)}</div>
       <div class="actions"><a class="btn primary" id="open-link" target="_blank" rel="noopener" aria-disabled="true">Loading link…</a><a class="btn" id="careers-link" target="_blank" rel="noopener">Company careers page ↗</a></div>
+      <p class="note" id="board-note" hidden></p>
     </div>
     <div class="track" id="track-box"></div>
     <dl class="facts">
@@ -1197,8 +1214,14 @@ function openJob(j) {
   });
   details(j).then(([url]) => {
     const a = $("#open-link"); if (current !== j || !a) return;
-    if (url) { a.href = url; a.textContent = "Open posting ↗"; a.removeAttribute("aria-disabled") }
-    else a.textContent = "Link unavailable";
+    if (url) {
+      const { board } = linkTarget(url);
+      a.href = url; a.textContent = postingLabel(url); a.removeAttribute("aria-disabled");
+      a.title = board ? `This listing is on ${board}, which relisted it. Use "Company careers page" to apply on ${j.company}'s own site.` : `Opens this job on ${j.company}'s own hiring site`;
+      a.classList.toggle("primary", !board);                 // a job-board link is shown as a secondary button
+      const note = $("#board-note");
+      if (note) note.hidden = !board, note.textContent = board ? `This listing is on ${board}, not ${j.company}'s own site. To apply directly, use "Company careers page" and search for the role there.` : "";
+    } else a.textContent = "Link unavailable";
   });
 }
 /* ---------- people to contact: search links the viewer opens themselves ---------- */
