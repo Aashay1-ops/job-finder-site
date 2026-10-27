@@ -142,6 +142,14 @@ td.zero { color: var(--muted); opacity: .5 }
 .track select, .board select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface) }
 .track textarea { width: 100%; min-height: 56px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); resize: vertical; font: inherit; font-size: 13px }
 .apps { display: grid; gap: 14px }
+.cos { display: grid; gap: 12px }
+.cos .cbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px }
+.cos .cbar input[type=search] { flex: 1 1 240px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg) }
+.cos .cbar select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg) }
+.cos table td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 160px }
+.cos table td a { white-space: nowrap }
+.cos tbody tr { cursor: default }
+.cos .viajb { color: var(--muted); font-size: 12px }
 .apps-top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between }
 .apps-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; flex: 1 1 520px }
 .apps-stats div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px }
@@ -284,6 +292,7 @@ td.zero { color: var(--muted); opacity: .5 }
     <label class="toggle"><input type="checkbox" id="f-yrs"> ≤2 yrs experience</label>
     <label class="toggle"><input type="checkbox" id="f-new"> New since last visit <span class="num" id="n-new"></span></label>
     <label class="toggle"><input type="checkbox" id="f-agg" checked> Hide job boards &amp; staffing agencies</label>
+    <button class="toggle" id="f-company" hidden title="Show all companies again"></button>
     <button class="linkbtn" id="reset">Clear all</button>
   </section>
 
@@ -302,6 +311,7 @@ td.zero { color: var(--muted); opacity: .5 }
   <div class="viewtabs" role="tablist">
     <button role="tab" id="v-all" aria-selected="true">All jobs</button>
     <button role="tab" id="v-board" aria-selected="false">My applications <span class="num" id="n-tracked"></span></button>
+    <button role="tab" id="v-co" aria-selected="false">Companies <span class="num" id="n-cos"></span></button>
     <span class="newinfo" id="new-info"></span>
   </div>
 
@@ -315,6 +325,27 @@ td.zero { color: var(--muted); opacity: .5 }
     <details class="log" id="apps-archive-wrap"><summary><h3 style="display:inline">Archived</h3> <span class="num" id="n-archived"></span></summary><div id="apps-archive" style="margin-top:8px;display:grid;gap:8px"></div></details>
   </section>
   <div class="toast" id="ask" hidden role="dialog" aria-live="polite"></div>
+
+  <section class="cos" id="cos" hidden aria-label="Companies">
+    <div class="cbar">
+      <input type="search" id="co-q" placeholder="Search companies…" aria-label="Search companies">
+      <select id="co-sort" aria-label="Sort companies">
+        <option value="track">Sort: most roles in my tracks</option><option value="student">Sort: most internships &amp; co-ops</option>
+        <option value="all">Sort: most open roles</option><option value="new">Sort: newest posting</option><option value="az">Sort: A–Z</option>
+      </select>
+      <label class="toggle"><input type="checkbox" id="co-mine" checked> Has roles in my tracks</label>
+      <label class="toggle"><input type="checkbox" id="co-ok"> Has visa-friendly roles</label>
+      <label class="toggle"><input type="checkbox" id="co-agg" checked> Hide job boards &amp; agencies</label>
+      <button class="linkbtn" id="co-export">Export CSV</button>
+      <span class="count num" id="co-count"></span>
+    </div>
+    <p class="note" style="margin:0">Each careers page is the company's own site (Workday, Greenhouse, Ashby and so on), worked out from its live job links and refreshed with every update. Where a company only appears through job boards, "Find careers page" searches for it.</p>
+    <div class="tablewrap" style="max-height:none"><table><thead><tr>
+      <th>Company</th><th>Open roles</th><th>In my tracks</th><th>Internships &amp; co-ops</th><th>Visa-friendly*</th><th>Newest</th><th>Careers page</th><th></th>
+    </tr></thead><tbody id="co-body"></tbody></table></div>
+    <div class="more" id="co-more"></div>
+    <p class="note" style="margin:0">* Roles not flagged for US citizenship, clearance or "no sponsorship". Always confirm on the posting.</p>
+  </section>
 
   <div class="panes">
     <div>
@@ -373,7 +404,7 @@ fetch("meta.json", { cache: "no-store" }).then(r => r.ok ? r.json() : {}).catch(
     const states = x.s ? x.s.split(",") : [];
     const company = META.companies[x.c];
     return {
-      id: String(idx), title: x.t, company, location: x.l, states, remote: !!x.r, posted: x.p,
+      id: String(idx), ci: x.c, title: x.t, company, location: x.l, states, remote: !!x.r, posted: x.p,
       type: x.ty, mode: x.m, modeSrc: META.mode_src[x.ms], level: x.lv, field: x.f, tracks: x.tr,
       years: x.y, restricted: !!(x.fl & 1), noSponsor: !!(x.fl & 2), phd: !!(x.fl & 4), sponsors: !!(x.fl & 8), estimate: !!(x.fl & 16), mass: !!(x.fl & 32), fakeFresh: !!(x.fl & 64),
       reposts: x.rp || 0, firstPosted: x.fp || "", age: daysAgo(x.p), ageBin: ageBin(daysAgo(x.p)), repBin: Math.min(x.rp || 0, 4),
@@ -389,6 +420,7 @@ fetch("meta.json", { cache: "no-store" }).then(r => r.ok ? r.json() : {}).catch(
   initNew();
   JOBS.forEach(j => j.rank = recommend(j));
   markClosed();
+  $("#n-cos").textContent = `(${new Set(JOBS.map(j => j.ci)).size.toLocaleString()})`;
   updateTrackCount();
   pullRecord();
   setTimeout(maybeAsk, 1500);
@@ -549,6 +581,7 @@ $("#c-all").addEventListener("click", () => { F.types.clear(); F.modes.clear(); 
 $("#f-new").addEventListener("change", () => render());
 $("#reset").addEventListener("click", () => {
   $("#f-new").checked = false;
+  F.company = null; $("#f-company").hidden = true;
   F.types.clear(); F.modes.clear(); F.ages.clear(); F.reps.clear(); F.state = ""; $("#f-state").value = ""; $("#q").value = "";
   IDS.forEach(i => { const el = document.getElementById(i); el.type === "checkbox" ? el.checked = i === "f-agg" : el.selectedIndex = 0 });
   save(); render();
@@ -586,6 +619,7 @@ function passes(j, c, ignore = {}) {
   if (c.mine && !j.tracks) return false;
   if (c.agg && j.reposter) return false;
   if (c.newOnly && !j.isNew) return false;
+  if (F.company != null && j.ci !== F.company) return false;
   if (c.cit && j.restricted) return false;
   if (c.spon && j.noSponsor) return false;
   if (c.yrs && (j.years ?? 0) > 2) return false;
@@ -820,14 +854,17 @@ function renderTrackBox(j) {
 }
 
 /* ---------- My applications section ---------- */
-function showView(apps) {
-  $("#v-all").setAttribute("aria-selected", !apps); $("#v-board").setAttribute("aria-selected", apps);
-  $("#apps").hidden = !apps;
-  document.querySelectorAll(".panes, .bystate, .filters, .counts, .fresh").forEach(el => el.hidden = apps);
-  if (apps) renderApps();
+function showView(view) {
+  if (view === true) view = "apps"; else if (view === false) view = "all";
+  for (const [id, v] of [["#v-all", "all"], ["#v-board", "apps"], ["#v-co", "co"]]) $(id).setAttribute("aria-selected", view === v);
+  $("#apps").hidden = view !== "apps"; $("#cos").hidden = view !== "co";
+  document.querySelectorAll(".panes, .bystate, .filters, .counts, .fresh").forEach(el => el.hidden = view !== "all");
+  if (view === "apps") renderApps();
+  if (view === "co") renderCompanies();
 }
-$("#v-all").onclick = () => showView(false);
-$("#v-board").onclick = () => showView(true);
+$("#v-all").onclick = () => showView("all");
+$("#v-board").onclick = () => showView("apps");
+$("#v-co").onclick = () => showView("co");
 function sinceText(iso) { const d = Math.round((Date.now() - new Date(iso)) / 864e5); return d <= 0 ? "today" : d === 1 ? "1 day ago" : d + " days ago" }
 function cardHTML(key, t, stage) {
   const live = KEYIDX.get(key);
@@ -878,6 +915,68 @@ $("#apps").addEventListener("click", e => {
   else if (e.target.matches("[data-restore]")) { t.archived = false; logEvent(t, "Restored"); saveTrack(); renderApps(); if (j) rerow(j) }
   else if (e.target.matches("[data-show]") && j) { showView(false); openJob(j) }
 });
+
+/* ---------- company careers pages (companies.json, loaded on first use) ---------- */
+let CAREERS = null;
+function careers() { return CAREERS ||= fetch("companies.json" + VER).then(r => r.json()).then(d => d.careers || []).catch(() => []) }
+const careersSearch = name => "https://www.google.com/search?q=" + encodeURIComponent(`"${name}" careers jobs`);
+
+let COSTATS = null, coShown = 0, coRows = [];
+function companyStats() {
+  if (COSTATS) return COSTATS;
+  const m = new Map();
+  for (const j of JOBS) {
+    let c = m.get(j.ci);
+    if (!c) m.set(j.ci, c = { ci: j.ci, name: j.company, all: 0, track: 0, student: 0, ok: 0, newest: 9e9, reposter: j.reposter });
+    c.all++;
+    if (j.tracks) c.track++;
+    if (j.type === 1 || j.type === 2) c.student++;
+    if (!j.restricted && !j.noSponsor) c.ok++;
+    if (j.age != null && j.age < c.newest) c.newest = j.age;
+  }
+  return COSTATS = [...m.values()];
+}
+async function renderCompanies() {
+  const q = $("#co-q").value.trim().toLowerCase(), sort = $("#co-sort").value;
+  const mine = $("#co-mine").checked, ok = $("#co-ok").checked, agg = $("#co-agg").checked;
+  coRows = companyStats().filter(c => (!q || c.name.toLowerCase().includes(q)) && (!mine || c.track) && (!ok || c.ok) && (!agg || !c.reposter));
+  const key = { track: c => -c.track, student: c => -c.student, all: c => -c.all, new: c => c.newest }[sort];
+  if (sort === "az") coRows.sort((a, b) => a.name.localeCompare(b.name)); else coRows.sort((a, b) => key(a) - key(b) || b.all - a.all);
+  $("#co-count").textContent = coRows.length.toLocaleString() + " companies";
+  coShown = 0; $("#co-body").innerHTML = ""; await moreCompanies();
+}
+async function moreCompanies() {
+  const pages = await careers();
+  const chunk = coRows.slice(coShown, coShown + 100); coShown += chunk.length;
+  const cell = v => `<td class="num ${v ? "" : "zero"}">${v.toLocaleString()}</td>`;
+  $("#co-body").insertAdjacentHTML("beforeend", chunk.map(c => {
+    const url = pages[c.ci];
+    return `<tr><td>${esc(c.name)}${c.reposter ? ` <span class="viajb">(job board / agency)</span>` : ""}</td>${cell(c.all)}${cell(c.track)}${cell(c.student)}${cell(c.ok)}
+      <td class="num">${c.newest < 9e9 ? esc(ageText(c.newest)) : "–"}</td>
+      <td>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">Careers page ↗</a>` : `<a href="${esc(careersSearch(c.name))}" target="_blank" rel="noopener">Find careers page ↗</a>`}</td>
+      <td><button class="linkbtn" data-co="${c.ci}">View ${c.all.toLocaleString()} job${c.all === 1 ? "" : "s"}</button></td></tr>`;
+  }).join(""));
+  $("#co-more").innerHTML = coShown < coRows.length ? `<button class="btn" id="co-more-btn">Show ${Math.min(100, coRows.length - coShown)} more <span class="num" style="color:var(--muted)">(${(coRows.length - coShown).toLocaleString()} left)</span></button>` : "";
+}
+let coTimer;
+$("#co-q").addEventListener("input", () => { clearTimeout(coTimer); coTimer = setTimeout(renderCompanies, 200) });
+["#co-sort", "#co-mine", "#co-ok", "#co-agg"].forEach(id => $(id).addEventListener("change", renderCompanies));
+$("#co-more").addEventListener("click", e => { if (e.target.closest("#co-more-btn")) moreCompanies() });
+$("#co-body").addEventListener("click", e => {
+  const b = e.target.closest("[data-co]"); if (!b) return;
+  const ci = +b.dataset.co, c = COSTATS.find(x => x.ci === ci);
+  F.company = ci; $("#f-company").textContent = `Company: ${c.name} ✕`; $("#f-company").hidden = false;
+  $("#f-agg").checked = false;  // you asked for this company specifically, so show it even if it's a job board
+  showView("all"); render(); window.scrollTo({ top: $("#list").getBoundingClientRect().top + scrollY - 80, behavior: "smooth" });
+});
+$("#f-company").onclick = () => { F.company = null; $("#f-company").hidden = true; render() };
+$("#co-export").onclick = async () => {
+  const pages = await careers(), q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [["Company", "Open roles", "In my tracks", "Internships & co-ops", "Visa-friendly", "Careers page"].map(q).join(",")]
+    .concat(coRows.map(c => [c.name, c.all, c.track, c.student, c.ok, pages[c.ci] || ""].map(q).join(",")));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  a.download = `company-careers-pages-${todayISO()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
 
 /* ---------- export ---------- */
 function exportCSV() {
@@ -1055,7 +1154,7 @@ function openJob(j) {
     <div class="dhead">
       <h2>${esc(j.title)}</h2>
       <div class="m">${esc(j.company)} · ${esc(j.location || where)}</div>
-      <div class="actions"><a class="btn primary" id="open-link" target="_blank" rel="noopener" aria-disabled="true">Loading link…</a></div>
+      <div class="actions"><a class="btn primary" id="open-link" target="_blank" rel="noopener" aria-disabled="true">Loading link…</a><a class="btn" id="careers-link" target="_blank" rel="noopener">Company careers page ↗</a></div>
     </div>
     <div class="track" id="track-box"></div>
     <dl class="facts">
@@ -1091,6 +1190,11 @@ function openJob(j) {
   (tailored ? showTailor : showBest)(j);
   renderTrackBox(j);
   d.scrollTop = 0;
+  careers().then(pages => {
+    const a = $("#careers-link"); if (current !== j || !a) return;
+    const url = pages[j.ci];
+    a.href = url || careersSearch(j.company); a.textContent = url ? "Company careers page ↗" : "Find company careers page ↗";
+  });
   details(j).then(([url]) => {
     const a = $("#open-link"); if (current !== j || !a) return;
     if (url) { a.href = url; a.textContent = "Open posting ↗"; a.removeAttribute("aria-disabled") }

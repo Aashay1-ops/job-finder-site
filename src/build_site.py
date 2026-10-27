@@ -40,7 +40,7 @@ def main():
         shutil.rmtree(SITE)
     SITE.mkdir()
     (SITE / "index.html").write_text(HEAD + (DASH / "index.html").read_text() + "\n</body>\n</html>\n")
-    files = [DASH / "jobs.json", *sorted(DASH.glob("details-*.json"))]
+    files = [DASH / "jobs.json", DASH / "companies.json", *sorted(DASH.glob("details-*.json"))]
     for f in files:
         shutil.copy2(f, SITE / f.name)
     n_jobs = len(json.loads((DASH / "jobs.json").read_text())["jobs"])

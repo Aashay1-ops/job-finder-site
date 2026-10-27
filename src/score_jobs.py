@@ -216,6 +216,11 @@ def main():
         "public": public, "cols": COLS, "shard": SHARD,
     }
     (DASH / "jobs.json").write_text(json.dumps({"meta": meta, "jobs": rows}, separators=(",", ":")))
+    # each company's own careers page, aligned with meta["companies"]; the dashboard loads it on demand
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import careers
+    pages = careers.careers_pages(data["jobs"])
+    (DASH / "companies.json").write_text(json.dumps({"careers": [pages.get(c, "") for c in companies]}, separators=(",", ":")))
 
     from collections import Counter
     print(f"scored {len(rows):,} jobs · {shard_no + 1} detail files · best resume:",
